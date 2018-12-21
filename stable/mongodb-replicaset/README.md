@@ -42,9 +42,6 @@ The following table lists the configurable parameters of the mongodb chart and t
 | `installImage.repository`           | Image name for the install container                                      | `unguiculus/mongodb-install`                        |
 | `installImage.tag`                  | Image tag for the install container                                       | `0.7`                                               |
 | `installImage.pullPolicy`           | Image pull policy for the init container that establishes the replica set | `IfNotPresent`                                      |
-| `copyConfigImage.repository`        | Image name for the copy config init container                             | `busybox`                                           |
-| `copyConfigImage.tag`               | Image tag for the copy config init container                              | `1.29.3`                                            |
-| `copyConfigImage.pullPolicy`        | Image pull policy for the copy config init container                      | `IfNotPresent`                                      |
 | `image.repository`                  | MongoDB image name                                                        | `mongo`                                             |
 | `image.tag`                         | MongoDB image tag                                                         | `3.6`                                               |
 | `image.pullPolicy`                  | MongoDB image pull policy                                                 | `IfNotPresent`                                      |
@@ -133,39 +130,17 @@ kubectl exec -it mongodb-replicaset-0 -- mongo mydb -u admin -p password --authe
 
 ## TLS support
 
-To enable full TLS encryption set `tls.enabled` to `true`. It is recommended to create your own CA by executing:
+To enable full TLS encryption set `tls.enabled` to `true`. Supply an existing certificate or create your own CA by executing:
 
 ```console
 openssl genrsa -out ca.key 2048
 openssl req -x509 -new -nodes -key ca.key -days 10000 -out ca.crt -subj "/CN=mydomain.com"
 ```
 
-After that paste the base64 encoded (`cat ca.key | base64 -w0`) cert and key into the fields `tls.cacert` and
-`tls.cakey`. Adapt the configmap for the replicaset as follows:
+Paste the base64 encoded (`cat ca.key | base64 -w0`) cert and key into the fields `tls.cacert` and `tls.cakey`.
 
-```yml
-configmap:
-  storage:
-    dbPath: /data/db
-  net:
-    port: 27017
-    ssl:
-      mode: requireSSL
-      CAFile: /data/configdb/tls.crt
-      PEMKeyFile: /work-dir/mongo.pem
-      # Set to false to require mutual TLS encryption
-      allowConnectionsWithoutCertificates: true
-  replication:
-    replSetName: rs0
-  security:
-    authorization: enabled
-    # # Uncomment to enable mutual TLS encryption
-    # clusterAuthMode: x509
-    keyFile: /keydir/key.txt
-```
-
-To access the cluster you need one of the certificates generated during cluster setup in `/work-dir/mongo.pem` of the
-certain container or you generate your own one via:
+To access the cluster you need the certificate generated during cluster setup in `/work-dir/mongo.pem`
+or you can generate your own one via:
 
 ```console
 $ cat >openssl.cnf <<EOL
@@ -179,47 +154,25 @@ keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 subjectAltName = @alt_names
 [alt_names]
 DNS.1 = $HOSTNAME1
-DNS.1 = $HOSTNAME2
+DNS.2 = $HOSTNAME2
 EOL
 $ openssl genrsa -out mongo.key 2048
 $ openssl req -new -key mongo.key -out mongo.csr -subj "/CN=$HOSTNAME" -config openssl.cnf
-$ openssl x509 -req -in mongo.csr \
-    -CA $MONGOCACRT -CAkey $MONGOCAKEY -CAcreateserial \
-    -out mongo.crt -days 3650 -extensions v3_req -extfile openssl.cnf
-$ rm mongo.csr
+$ openssl x509 -req -in mongo.csr -CA $MONGOCACRT -CAkey $MONGOCAKEY -CAcreateserial -out mongo.crt -days 3650 -extensions v3_req -extfile openssl.cnf
 $ cat mongo.crt mongo.key > mongo.pem
-$ rm mongo.key mongo.crt
 ```
 
 Please ensure that you exchange the `$HOSTNAME` with your actual hostname and the `$HOSTNAME1`, `$HOSTNAME2`, etc. with
-alternative hostnames you want to allow access to the MongoDB replicaset. You should now be able to authenticate to the
+alternative hostnames you want to allow access to the MongoDB replica set. You should now be able to authenticate to the
 mongodb with your `mongo.pem` certificate:
 
 ```console
 mongo --ssl --sslCAFile=ca.crt --sslPEMKeyFile=mongo.pem --eval "db.adminCommand('ping')"
 ```
 
-## Promethus metrics
+## Prometheus Metrics
 
-Enabling the metrics as follows will allow for each replicaset pod to export Prometheus compatible metrics
-on server status, individual replicaset information, replication oplogs, and storage engine.
-
-```yaml
-metrics:
-  enabled: true
-  image:
-    repository: ssalaues/mongodb-exporter
-    tag: 0.6.1
-    pullPolicy: IfNotPresent
-  port: 9216
-  path: "/metrics"
-  socketTimeout: 3s
-  syncTimeout: 1m
-  prometheusServiceDiscovery: true
-  resources: {}
-```
-
-More information on [MongoDB Exporter](https://github.com/percona/mongodb_exporter) metrics available.
+A [MongoDB Exporter](https://github.com/percona/mongodb_exporter) sidecar can gather Prometheus metrics for collections, oplog, replica set, and server status. Enable metrics by setting `metrics.enabled` to `true`.
 
 ## Deep dive
 
@@ -359,10 +312,8 @@ Scaling should be managed by `helm upgrade`, which is the recommended way.
 
 ### Indexes and Maintenance
 
-You can run Mongo in standalone mode and execute Javascript code on each replica at initContainer time using `initMongodStandalone`.
-This allows you to create indexes on replicasets following [best practices](https://docs.mongodb.com/manual/tutorial/build-indexes-on-replica-sets/).
-
-#### Example: Creating Indexes
+You can run MongoDB in standalone mode and execute JavaScript code on each replica set member during startup using `initMongodStandalone`.
+This allows you to create indexes on replica sets following [best practices](https://docs.mongodb.com/manual/tutorial/build-indexes-on-replica-sets/).
 
 ```js
 initMongodStandalone: |+
