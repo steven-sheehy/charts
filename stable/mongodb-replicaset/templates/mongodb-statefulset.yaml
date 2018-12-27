@@ -46,37 +46,40 @@ spec:
 {{ toYaml .Values.securityContext | indent 8 }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       initContainers:
-        - name: install
-          image: "{{ .Values.installImage.repository }}:{{ .Values.installImage.tag }}"
+        - name: init
+          image: "{{ .Values.init.repository }}:{{ .Values.init.tag }}"
           args:
-            - --work-dir=/work-dir
-          imagePullPolicy: "{{ .Values.installImage.pullPolicy }}"
+            - -ns={{ .Release.Namespace }}
+            - -on-start=/bin/mongodb/on-init.sh
+            - -service={{ template "mongodb-replicaset.fullname" . }}
+          imagePullPolicy: "{{ .Values.init.pullPolicy }}"
           volumeMounts:
-            - name: workdir
-              mountPath: /work-dir
+            - name: bin
+              mountPath: /bin/mongodb
+            {{- if .Values.tls.enabled }}
+            - name: ca
+              mountPath: /etc/mongodb/ca
+            {{- end }}
+            {{- if .Values.auth.enabled }}
+            - name: key
+              mountPath: /etc/mongodb/key
+            {{- end }}
+            - name: run
+              mountPath: /run/mongodb
           resources:
 {{ toYaml .Values.init.resources | indent 12 }}
-        - name: bootstrap
+          securityContext:
+            readOnlyRootFilesystem: true
+      containers:
+        - name: mongodb
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          command:
-            - /work-dir/peer-finder
-          args:
-            - -on-start=/init/on-start.sh
-            - "-service={{ template "mongodb-replicaset.fullname" . }}"
           imagePullPolicy: "{{ .Values.image.pullPolicy }}"
           env:
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.namespace
             - name: REPLICA_SET
               value: {{ .Values.replicaSetName }}
             - name: TIMEOUT
               value: "{{ .Values.init.timeout }}"
           {{- if .Values.auth.enabled }}
-            - name: AUTH
-              value: "true"
             - name: ADMIN_USER
               valueFrom:
                 secretKeyRef:
@@ -88,8 +91,6 @@ spec:
                   name: "{{ template "mongodb-replicaset.adminSecret" . }}"
                   key: password
           {{- if .Values.metrics.enabled }}
-            - name: METRICS
-              value: "true"
             - name: METRICS_USER
               valueFrom:
                 secretKeyRef:
@@ -102,31 +103,7 @@ spec:
                   key: password
           {{- end }}
           {{- end }}
-          volumeMounts:
-            - name: config
-              mountPath: /etc/mongodb/config
-            - name: datadir
-              mountPath: /data/db
-            - name: init
-              mountPath: /init
-            {{- if .Values.auth.enabled }}
-            - name: keydir
-              mountPath: /etc/mongodb/key
-            {{- end }}
-            {{- if .Values.tls.enabled }}
-            - name: ca
-              mountPath: /etc/mongodb/ca
-            {{- end }}
-            - name: workdir
-              mountPath: /work-dir
-          resources:
-{{ toYaml .Values.init.resources | indent 12 }}
-      containers:
-        - name: {{ template "mongodb-replicaset.name" . }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: "{{ .Values.image.pullPolicy }}"
         {{- if .Values.extraVars }}
-          env:
 {{ toYaml .Values.extraVars | indent 12 }}
         {{- end }}
           ports:
@@ -144,13 +121,17 @@ spec:
             - --bind_ip=0.0.0.0
           {{- if .Values.auth.enabled }}
             - --auth
-            - --keyFile=/work-dir/key.txt
+            - --keyFile=/run/mongodb/key.txt
           {{- end }}
           {{- if .Values.tls.enabled }}
             - --sslMode=requireSSL
             - --sslCAFile=/etc/mongodb/ca/tls.crt
-            - --sslPEMKeyFile=/work-dir/mongo.pem
+            - --sslPEMKeyFile=/run/mongodb/mongo.pem
           {{- end }}
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "/bin/mongodb/on-start.sh"]
           livenessProbe:
             exec:
               command:
@@ -158,7 +139,7 @@ spec:
               {{- if .Values.tls.enabled }}
                 - --ssl
                 - --sslCAFile=/etc/mongodb/ca/tls.crt
-                - --sslPEMKeyFile=/work-dir/mongo.pem
+                - --sslPEMKeyFile=/run/mongodb/mongo.pem
               {{- end }}
                 - --eval
                 - "db.adminCommand('ping')"
@@ -174,7 +155,7 @@ spec:
               {{- if .Values.tls.enabled }}
                 - --ssl
                 - --sslCAFile=/etc/mongodb/ca/tls.crt
-                - --sslPEMKeyFile=/work-dir/mongo.pem
+                - --sslPEMKeyFile=/run/mongodb/mongo.pem
               {{- end }}
                 - --eval
                 - "db.adminCommand('ping')"
@@ -184,20 +165,22 @@ spec:
             periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
             successThreshold: {{ .Values.readinessProbe.successThreshold }}
           volumeMounts:
-            - name: config
-              mountPath: /etc/mongodb/config
-            - name: datadir
-              mountPath: /data/db
-            {{- if .Values.auth.enabled }}
-            - name: keydir
-              mountPath: /etc/mongodb/key
-            {{- end }}
+            - name: bin
+              mountPath: /bin/mongodb
             {{- if .Values.tls.enabled }}
             - name: ca
               mountPath: /etc/mongodb/ca
             {{- end }}
-            - name: workdir
-              mountPath: /work-dir
+            - name: config
+              mountPath: /etc/mongodb/config
+            - name: data
+              mountPath: /data/db
+            {{- if .Values.auth.enabled }}
+            - name: key
+              mountPath: /etc/mongodb/key
+            {{- end }}
+            - name: run
+              mountPath: /run/mongodb
 {{ if .Values.metrics.enabled }}
         - name: metrics
           image: "{{ .Values.metrics.image.repository }}:{{ .Values.metrics.image.tag }}"
@@ -214,21 +197,23 @@ spec:
             {{- end }}
             {{- if .Values.tls.enabled }}
               -mongodb.tls
-              -mongodb.tls-ca=/etc/mongodb/tls/tls.crt
-              -mongodb.tls-cert=/work-dir/mongo.pem
+              -mongodb.tls-ca=/etc/mongodb/ca/tls.crt
+              -mongodb.tls-cert=/run/mongodb/mongo.pem
             {{- end }}
               -mongodb.socket-timeout={{ .Values.metrics.socketTimeout }}
               -mongodb.sync-timeout={{ .Values.metrics.syncTimeout }}
               -web.metrics-path={{ .Values.metrics.path }}
               -web.listen-address=:{{ .Values.metrics.port }}
+          securityContext:
+            readOnlyRootFilesystem: true
           volumeMounts:
           {{- if and (.Values.tls.enabled) }}
             - name: ca
               mountPath: /etc/mongodb/ca
               readOnly: true
           {{- end }}
-            - name: workdir
-              mountPath: /work-dir
+            - name: run
+              mountPath: /run/mongodb
               readOnly: true
           env:
           {{- if .Values.auth.enabled }}
@@ -263,7 +248,7 @@ spec:
                 {{- if .Values.tls.enabled }}
                   -mongodb.tls
                   -mongodb.tls-ca=/etc/mongodb/ca/tls.crt
-                  -mongodb.tls-cert=/work-dir/mongo.pem
+                  -mongodb.tls-cert=/run/mongodb/mongo.pem
                 {{- end }}
                   -test
               initialDelaySeconds: 30
@@ -282,13 +267,13 @@ spec:
 {{ toYaml . | indent 8 }}
     {{- end }}
       volumes:
+        - name: bin
+          configMap:
+            defaultMode: 365
+            name: {{ template "mongodb-replicaset.fullname" . }}-bin
         - name: config
           configMap:
             name: {{ template "mongodb-replicaset.fullname" . }}-mongodb
-        - name: init
-          configMap:
-            defaultMode: 365
-            name: {{ template "mongodb-replicaset.fullname" . }}-init
         {{- if .Values.tls.enabled }}
         - name: ca
           secret:
@@ -296,17 +281,17 @@ spec:
             secretName: {{ template "mongodb-replicaset.fullname" . }}-ca
         {{- end }}
         {{- if .Values.auth.enabled }}
-        - name: keydir
+        - name: key
           secret:
             defaultMode: 256
             secretName: {{ template "mongodb-replicaset.keySecret" . }}
         {{- end }}
-        - name: workdir
+        - name: run
           emptyDir: {}
 {{- if .Values.persistentVolume.enabled }}
   volumeClaimTemplates:
     - metadata:
-        name: datadir
+        name: data
         annotations:
         {{- range $key, $value := .Values.persistentVolume.annotations }}
           {{ $key }}: {{ $value }}
@@ -327,6 +312,6 @@ spec:
       {{- end }}
       {{- end }}
 {{- else }}
-        - name: datadir
+        - name: data
           emptyDir: {}
 {{- end }}

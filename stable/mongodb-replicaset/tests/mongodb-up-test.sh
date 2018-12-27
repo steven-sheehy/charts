@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 MONGOCACRT=/ca/tls.crt
-MONGOPEM=/work-dir/mongo.pem
+MONGOPEM=/run/mongodb/mongo.pem
 
 MONGOARGS="--quiet"
 

@@ -26,10 +26,12 @@ imagePullSecrets: []
 #   - myRegistrKeySecretName
 
 # Specs for the Docker image for the init container that establishes the replica set
-installImage:
-  repository: unguiculus/mongodb-install
-  tag: 0.7
+init:
+  repository: k8s.gcr.io/peer-finder
+  tag: "0.1"
   pullPolicy: IfNotPresent
+  resources: {}
+  timeout: 900
 
 # Specs for the MongoDB image
 image:
@@ -63,10 +65,6 @@ securityContext:
   runAsUser: 999
   fsGroup: 999
   runAsNonRoot: true
-
-init:
-  resources: {}
-  timeout: 900
 
 resources: {}
 # limits:

@@ -18,7 +18,7 @@ NS="${RELEASE_NAMESPACE:-default}"
 POD_NAME="${RELEASE_NAME:-mongo}-mongodb-replicaset"
 
 MONGOCACRT=/ca/tls.crt
-MONGOPEM=/work-dir/mongo.pem
+MONGOPEM=/run/mongodb/mongo.pem
 if [ -f $MONGOPEM ]; then
     MONGOARGS="--ssl --sslCAFile $MONGOCACRT --sslPEMKeyFile $MONGOPEM"
 fi

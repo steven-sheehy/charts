@@ -39,9 +39,10 @@ The following table lists the configurable parameters of the mongodb chart and t
 | `podDisruptionBudget`               | Pod disruption budget                                                     | `{}`                                                |
 | `port`                              | MongoDB port                                                              | `27017`                                             |
 | `imagePullSecrets`                  | Image pull secrets                                                        | `[]`                                                |
-| `installImage.repository`           | Image name for the install container                                      | `unguiculus/mongodb-install`                        |
-| `installImage.tag`                  | Image tag for the install container                                       | `0.7`                                               |
-| `installImage.pullPolicy`           | Image pull policy for the init container that establishes the replica set | `IfNotPresent`                                      |
+| `init.image.pullPolicy`             | Image pull policy for the init container that establishes the replica set | `IfNotPresent`                                      |
+| `init.image.repository`             | Image name for the int container                                          | `unguiculus/mongodb-install`                        |
+| `init.image.tag`                    | Image tag for the init container                                          | `0.7`                                               |
+| `init.timeout`                      | The amount of time in seconds to wait for bootstrap to finish             | `900`                                               |
 | `image.repository`                  | MongoDB image name                                                        | `mongo`                                             |
 | `image.tag`                         | MongoDB image tag                                                         | `3.6`                                               |
 | `image.pullPolicy`                  | MongoDB image pull policy                                                 | `IfNotPresent`                                      |
@@ -57,7 +58,6 @@ The following table lists the configurable parameters of the mongodb chart and t
 | `tls.enabled`                       | Enable MongoDB TLS support including authentication                       | `false`                                             |
 | `tls.cacert`                        | The CA certificate used for the members                                   | Our self signed CA certificate                      |
 | `tls.cakey`                         | The CA key used for the members                                           | Our key for the self signed CA certificate          |
-| `init.resources`                    | Pod resource requests and limits (for init containers)                    | `{}`                                                |
 | `init.timeout`                      | The amount of time in seconds to wait for bootstrap to finish             | `900`                                               |
 | `metrics.enabled`                   | Enable Prometheus compatible metrics for pods and replicasets             | `false`                                             |
 | `metrics.image.repository`          | Image name for metrics exporter                                           | `ssalaues/mongodb-exporter`                         |
@@ -139,7 +139,7 @@ openssl req -x509 -new -nodes -key ca.key -days 10000 -out ca.crt -subj "/CN=myd
 
 Paste the base64 encoded (`cat ca.key | base64 -w0`) cert and key into the fields `tls.cacert` and `tls.cakey`.
 
-To access the cluster you need the certificate generated during cluster setup in `/work-dir/mongo.pem`
+To access the cluster you need the certificate generated during cluster setup in `/run/mongodb/mongo.pem`
 or you can generate your own one via:
 
 ```console
@@ -324,5 +324,5 @@ initMongodStandalone: |+
 Tail the logs to debug running indexes or to follow their progress
 
 ```sh
-kubectl exec -it $RELEASE-mongodb-replicaset-0 -c bootstrap -- tail -f /work-dir/log.txt
+kubectl exec -it $RELEASE-mongodb-replicaset-0 -c mongodb -- tail -f /run/mongodb/on-start.log
 ```
