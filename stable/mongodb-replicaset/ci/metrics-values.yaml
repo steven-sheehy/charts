@@ -5,6 +5,8 @@ auth:
   metricsUser: metrics
   metricsPassword: password
   key: keycontent
+initMongodStandalone: |+
+  db.getSiblingDB("test").testcollection.createIndex({test: 1})
 metrics:
   enabled: true
 tls:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2018 The Kubernetes Authors. All rights reserved.
+# Copyright 2019 The Kubernetes Authors. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ while read -ra line; do
     if [[ "${line}" == *"${HOSTNAME}"* ]]; then
         SERVICE_NAME="${line}"
     fi
-    PEERS+="${line}"
+    PEERS+=("${line}")
 done
 
 echo -n "${PEERS[*]}" > "${RUN_DIR}/peers"
@@ -64,7 +64,7 @@ EOL
   openssl x509 -req -in mongo.csr -CA "${CA_CRT}" -CAkey "${CA_KEY}" -CAserial ./tls.srl -CAcreateserial -out mongo.crt -days 3650 -extensions v3_req -extfile openssl.cnf
 
   cat mongo.crt mongo.key > "${PEM}"
-  rm mongo.csr mongo.key mongo.crt
+  rm mongo.csr mongo.key mongo.crt openssl.cnf tls.srl
 fi
 
 exit 0

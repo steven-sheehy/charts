@@ -70,6 +70,44 @@ spec:
 {{ toYaml .Values.init.resources | indent 12 }}
           securityContext:
             readOnlyRootFilesystem: true
+{{- if .Values.initMongodStandalone }}
+        - name: standalone
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: "{{ .Values.image.pullPolicy }}"
+          command: ["/bin/sh", "-c", "/bin/mongodb/standalone.sh"]
+          {{- if .Values.auth.enabled }}
+          env:
+            - name: ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ template "mongodb-replicaset.adminSecret" . }}"
+                  key: user
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ template "mongodb-replicaset.adminSecret" . }}"
+                  key: password
+          {{- end }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          volumeMounts:
+            - name: bin
+              mountPath: /bin/mongodb
+            {{- if .Values.tls.enabled }}
+            - name: ca
+              mountPath: /etc/mongodb/ca
+            {{- end }}
+            - name: config
+              mountPath: /etc/mongodb/config
+            - name: data
+              mountPath: /data/db
+            {{- if .Values.auth.enabled }}
+            - name: key
+              mountPath: /etc/mongodb/key
+            {{- end }}
+            - name: run
+              mountPath: /run/mongodb
+{{- end }}
       containers:
         - name: mongodb
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -270,7 +308,7 @@ spec:
         - name: bin
           configMap:
             defaultMode: 365
-            name: {{ template "mongodb-replicaset.fullname" . }}-bin
+            name: {{ template "mongodb-replicaset.fullname" . }}-init
         - name: config
           configMap:
             name: {{ template "mongodb-replicaset.fullname" . }}-mongodb

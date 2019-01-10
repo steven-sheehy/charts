@@ -9,13 +9,15 @@ metadata:
 {{- if .Values.extraLabels }}
 {{ toYaml .Values.extraLabels | indent 4 }}
 {{- end }}
-  name: {{ template "mongodb-replicaset.fullname" . }}-bin
+  name: {{ template "mongodb-replicaset.fullname" . }}-init
 data:
   on-init.sh: |
 {{ .Files.Get "scripts/on-init.sh" | indent 4 }}
   on-start.sh: |
 {{ .Files.Get "scripts/on-start.sh" | indent 4 }}
 {{- if .Values.initMongodStandalone }}
+  standalone.sh: |
+{{ .Files.Get "scripts/standalone.sh" | indent 4 }}
   initMongodStandalone.js: |
 {{ .Values.initMongodStandalone | indent 4 }}
 {{- end }}
